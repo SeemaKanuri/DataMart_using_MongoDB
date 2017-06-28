@@ -1,0 +1,153 @@
+# use database 
+use nero 
+# create or use existing db
+#importing data from my C:\data\db folder
+
+# in another cmd prompt
+
+mongoimport --db nero --type csv --headerline --file \data\db\sales.csv
+mongoimport --db nero --type csv --headerline --file \data\db\countrygroups.csv
+mongoimport --db nero --type csv --headerline --file \data\db\ledger.csv
+
+# faced error as identical feilds just added a new columns with unique numbers and it worked
+# I will try to remove this extra column in later phases
+
+show collections 
+# to see collections in my database
+
+db.sales.findOne()
+# to view how my data is imported
+# similarly for other three collections
+ db.sales.findOne()
+{
+        "_id" : ObjectId("590d66f06df312170c6487ec"),
+        "custId" : 23262,
+        "name" : "Candice Levy",
+        "country" : "Congo",
+        "product" : "SUPA101",
+        "mode" : "Online",
+        "quantity" : 117,
+        "date" : "8/9/2012"
+}
+ db.sales.updateMany({},{$rename:{"name":"custname"}})
+{ "acknowledged" : true, "matchedCount" : 998, "modifiedCount" : 997 }
+
+
+ db.ledger.findOne()
+{
+        "_id" : ObjectId("590d69e56df312170c648c9d"),
+        "id" : 1,
+        "prodid" : "PURA100",
+        "prodname" : "Pure Soft Detergent - 100ml",
+        "stdCost" : "$1.50",
+        "stdPrice" : "$3.00"
+}
+# most of these tasks can be easily done in excel just for hands on purpose
+
+db.ledger.aggregate([{$addFields:{"stdcost2":{$concat:["zigzag","$stdCost"]},"stdPrice2":{$concat:["zigzag","$stdPrice"]}}},{$out:"ledger2"}])
+ db.ledger2.aggregate([{$project:{"stdcost":{$split:["$stdcost2","zigzag$"]}}}])
+{ "_id" : ObjectId("590d69e56df312170c648c9d"), "stdcost" : [ "", "1.50" ] }
+# now i will remove those 2columns
+> db.ledger2.update({},{$unset:{stdCost:"",stdPrice:""}})
+WriteResult({ "nMatched" : 1, "nUpserted" : 0, "nModified" : 1 })
+db.ledger2.aggregate([{$project:{"prodid":1,"prodname":1,"cost2":{$split:["$stdcost2","zigzag$"]},"price2":{$split:["$stdPrice2","zigzag$"]}}},{$project:{"prodid":1,"prodname":1,"cost":{$arrayElemAt:["$cost2",1]},"price":{$arrayElemAt:["$price2",1]}}}])
+> db.ledger3.find().forEach(function(x){x.cost=parseInt(x.cost);x.price=parseInt(x.price);db.ledger.update({},{$set:{"cost":x.cost,"price":x.price}})})
+> db.ledger.findOne()
+{
+        "_id" : ObjectId("590d69e56df312170c648c9d"),
+        "prodid" : "PURA100",
+        "prodname" : "Pure Soft Detergent - 100ml",
+        "cost" : 8,
+        "price" : 14
+}
+
+ db.countrygroups.findOne()
+{
+        "_id" : ObjectId("590d69986df312170c648bdf"),
+        "id" : 1,
+        "country" : "Bangladesh",
+        "continent" : "Asia"
+}
+> db.countrygroups.updateMany({},{$unset:{"id":""}})
+{ "acknowledged" : true, "matchedCount" : 185, "modifiedCount" : 184 }
+>
+
+#Now that our data is in requiredformat and all I combine them into a single document step by step to make it a combined doc.
+ db.sales.aggregate([{$lookup:{from:"countrygroups",localField:"country",foreignField:"country",as:"geo"}},{$out:"sales2"}])
+# I am joining country and continent in same group
+
+ db.sales2.aggregate([{$addFields:{"continent":"$geo.continent"}},{$unwind:"$continent"}])
+ # this brings continent out from geo and unwinds it to regular feild from array format
+ # storing it in sales
+ 
+  db.sales.updateMany({},{$unset:{"geo":""}})
+{ "acknowledged" : true, "matchedCount" : 681, "modifiedCount" : 681 }
+# now joining my sales and 
+db.sales.aggregate([{$lookup:{from:"ledger",localField:"product",foreignField:"prodid",as:"ledger"}},
+{$addFields:{"cost":"$ledger.cost","price":"$ledger.price","prodname":"$ledger.prodname"}},{$unwind:"$cost"},{$unwind:"$price"},{$unwind:"$prodname"},{$out:"sales2"}])
+
+
+ db.sales2.updateMany({},{$unset:{"ledger":""}})
+{ "acknowledged" : true, "matchedCount" : 613, "modifiedCount" : 613 }
+
+
+ db.sales2.findOne()
+{
+        "_id" : ObjectId("590d6cfb6df312170c648cc0"),
+        "custId" : 23263,
+        "country" : "Panama",
+        "product" : "DETA200",
+        "mode" : "Direct",
+        "quantity" : 73,
+        "date" : "7/6/2012",
+        "custname" : "Xerxes Smith",
+        "continent" : "Central America and the Caribbean",
+        "cost" : 3,
+        "price" : 6,
+        "prodname" : "Detafast Stain Remover - 200ml"
+}
+# my final data set
+
+> db.sales2.aggregate([{$group:{_id:"$custId","country":{$first:"$country"},"product":{$first:"$product"},"mode":{$first:"$mode"},"order_date":{$first:"$date"},"custname":{$first:"$custname"},"continent":{$first:"$continent"},"costprice":{$sum:{$multiply:["$cost","$quantity"]}},"soldprice":{$sum:{$multiply:["$quantity","$price"]}}}},{$out:"orders"}])
+> db.orders.findOne()
+{
+        "_id" : 24257,
+        "country" : "Ireland",
+        "product" : "DETA800",
+        "mode" : "Retail",
+        "order_date" : "2/4/2011",
+        "custname" : "Noelle Sargent",
+        "continent" : "Europe",
+        "costprice" : 102,
+        "soldprice" : 153
+}
+>
+# now profit can be calulated from soldprice -costprice and etc.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+ 
+ 
+ 
+ 
+
+
+
+
+
+
+
